@@ -1,5 +1,9 @@
 # remote-cli
 
+<p align="center">
+  <img src="assets/remote_cli_ai_poster.png" alt="remote-cli Poster" width="600">
+</p>
+
 > **Shared SSH & Terminal CLI tool for AI Agent and Human Co-piloting.**
 
 `remote-cli` allows a human user to start an interactive SSH session (handling passwords, 2FA, bastion hosts, and SSH keys themselves) and share that session with an AI Agent via a unique `session-id`.
