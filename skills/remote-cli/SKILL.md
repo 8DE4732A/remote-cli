@@ -126,13 +126,35 @@ remote-cli logs <session-id> --lines 50
 
 ---
 
-### 3.5. List Active Sessions (`remote-cli session list` / `remote-cli ls`)
+### 3.5. Transfer Files & Directories (`remote-cli cp` / `upload` / `download`)
+
+Seamlessly transfers files and directories between the local machine and the remote server over the active session without requiring SFTP configuration or opening extra ports.
+
+```bash
+# Docker-style copy syntax:
+# Upload local file/dir to remote server:
+remote-cli cp ./dist/app.tar.gz <session-id>:/opt/app/
+remote-cli cp ./config/ <session-id>:/opt/config/
+
+# Download remote file/dir to local machine:
+remote-cli cp <session-id>:/var/log/nginx/error.log ./logs/
+remote-cli cp <session-id>:/var/log/nginx/ ./local_nginx_logs/
+
+# Direct upload/download commands:
+remote-cli upload <session-id> <local-path> <remote-path>
+remote-cli download <session-id> <remote-path> <local-path>
+```
+
+---
+
+### 3.6. List Active Sessions (`remote-cli session list` / `remote-cli ls`)
 
 Discovers active and recent sessions.
 
 ```bash
 remote-cli ls
 ```
+
 
 ---
 

@@ -281,12 +281,42 @@ def ensure_daemon_running() -> None:
 def stop_daemon() -> bool:
     """Stops the running daemon process."""
     pid_path = get_pid_path()
+    sock_path = get_socket_path()
     if not pid_path.exists():
+        if sock_path.exists():
+            try:
+                sock_path.unlink()
+            except Exception:
+                pass
         return False
     try:
         pid = int(pid_path.read_text().strip())
-        os.kill(pid, signal.SIGTERM)
-        time.sleep(0.3)
+        try:
+            os.kill(pid, signal.SIGTERM)
+            for _ in range(20):
+                time.sleep(0.1)
+                try:
+                    os.kill(pid, 0)
+                except OSError:
+                    break
+            else:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
+        except OSError:
+            pass
+
+        if pid_path.exists():
+            try:
+                pid_path.unlink()
+            except Exception:
+                pass
+        if sock_path.exists():
+            try:
+                sock_path.unlink()
+            except Exception:
+                pass
         return True
     except Exception:
         return False

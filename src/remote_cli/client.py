@@ -162,3 +162,39 @@ class Client:
         )
         resp = self._send_request(req)
         return resp.success
+
+    def upload_file(
+        self,
+        session_id: str,
+        local_path: str | Path,
+        remote_path: str,
+        progress_callback=None,
+    ) -> None:
+        """Uploads a local file or directory to remote_path in the session."""
+        from .transfer import TransferManager
+
+        tm = TransferManager(self)
+        tm.upload(
+            session_id=session_id,
+            local_path=local_path,
+            remote_path=remote_path,
+            progress_callback=progress_callback,
+        )
+
+    def download_file(
+        self,
+        session_id: str,
+        remote_path: str,
+        local_path: str | Path,
+        progress_callback=None,
+    ) -> None:
+        """Downloads a remote file or directory from the session to local_path."""
+        from .transfer import TransferManager
+
+        tm = TransferManager(self)
+        tm.download(
+            session_id=session_id,
+            remote_path=remote_path,
+            local_path=local_path,
+            progress_callback=progress_callback,
+        )

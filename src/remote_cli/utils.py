@@ -30,6 +30,18 @@ def get_log_path() -> Path:
     return get_base_dir() / "daemon.log"
 
 
+def get_cm_dir() -> Path:
+    """Returns the ControlMaster sockets directory."""
+    cm_dir = get_base_dir() / "cm"
+    cm_dir.mkdir(parents=True, exist_ok=True)
+    return cm_dir
+
+
+def get_cm_socket_path(session_id: str) -> Path:
+    """Returns the ControlMaster socket path for a given session."""
+    return get_cm_dir() / f"{session_id}.sock"
+
+
 def generate_session_id() -> str:
     """Generates a short, user-friendly session ID."""
     return f"s_{uuid.uuid4().hex[:8]}"

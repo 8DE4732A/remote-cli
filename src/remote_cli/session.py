@@ -149,6 +149,25 @@ class Session:
         if self.master_fd is not None:
             self._set_pty_size(self.master_fd, rows, cols)
 
+    def _handle_output_data(self, data: bytes) -> None:
+        """Processes output bytes received from PTY."""
+        self.screen.feed(data)
+        self.buffer.append(data)
+
+        if self.active_watcher:
+            text = data.decode("utf-8", errors="replace")
+            self.active_watcher.feed(text)
+
+        dead_writers = set()
+        for writer in self.attached_writers:
+            try:
+                writer.write(data)
+            except Exception:
+                dead_writers.add(writer)
+
+        for writer in dead_writers:
+            self.attached_writers.discard(writer)
+
     def _on_pty_readable(self) -> None:
         """Callback invoked when PTY master has output to read."""
         if self.master_fd is None:
@@ -159,32 +178,13 @@ class Session:
         except (BlockingIOError, InterruptedError):
             return
         except OSError:
-            # PTY slave closed / child exited
             data = b""
 
         if not data:
             self._on_process_exit()
             return
 
-        # Feed screen and buffer
-        self.screen.feed(data)
-        self.buffer.append(data)
-
-        # Feed active watcher
-        if self.active_watcher:
-            text = data.decode("utf-8", errors="replace")
-            self.active_watcher.feed(text)
-
-        # Broadcast to all attached clients
-        dead_writers = set()
-        for writer in self.attached_writers:
-            try:
-                writer.write(data)
-            except Exception:
-                dead_writers.add(writer)
-
-        for writer in dead_writers:
-            self.attached_writers.discard(writer)
+        self._handle_output_data(data)
 
     def _on_process_exit(self) -> None:
         """Handles PTY close and subprocess termination."""
@@ -204,6 +204,16 @@ class Session:
             except Exception:
                 pass
 
+        # Clean up ControlMaster socket if exists
+        try:
+            from .utils import get_cm_socket_path
+
+            cm_sock = get_cm_socket_path(self.session_id)
+            if cm_sock.exists():
+                cm_sock.unlink()
+        except Exception:
+            pass
+
         # Notify attached writers
         for writer in list(self.attached_writers):
             try:
@@ -219,11 +229,43 @@ class Session:
             )
 
     def write_input(self, data: bytes) -> None:
-        """Writes raw input bytes to the PTY."""
+        """Writes raw input bytes to the PTY with non-blocking flow control and echo draining."""
         if self.master_fd is None or self.status != "active":
             raise RuntimeError(f"Session {self.session_id} is not active")
         try:
-            os.write(self.master_fd, data)
+            import select
+            import time
+
+            total_written = 0
+            total_len = len(data)
+
+            while total_written < total_len:
+                if self.master_fd is None or self.status != "active":
+                    break
+
+                # 1. Drain pending output from PTY to prevent slave echo buffer deadlock
+                try:
+                    rlist, _, _ = select.select([self.master_fd], [], [], 0)
+                    if self.master_fd in rlist:
+                        chunk_out = os.read(self.master_fd, 4096)
+                        if chunk_out:
+                            self._handle_output_data(chunk_out)
+                except Exception:
+                    pass
+
+                # 2. Write chunk
+                chunk = data[total_written : total_written + 512]
+                try:
+                    n = os.write(self.master_fd, chunk)
+                    total_written += n
+                    if total_len > 512:
+                        time.sleep(0.0005)
+                except (BlockingIOError, InterruptedError):
+                    # PTY buffer full: wait briefly and drain
+                    try:
+                        select.select([self.master_fd], [self.master_fd], [], 0.02)
+                    except Exception:
+                        pass
         except Exception as e:
             raise RuntimeError(f"Failed to write to session {self.session_id}: {e}") from e
 
@@ -312,10 +354,29 @@ class SessionManager:
     ) -> Session:
         session_id = generate_session_id()
         session_name = name or f"session-{session_id}"
+
+        # If command starts with ssh, automatically configure ControlMaster
+        final_command = list(command)
+        if final_command and final_command[0] == "ssh":
+            from .utils import get_cm_socket_path
+
+            cm_sock = get_cm_socket_path(session_id)
+            has_cm = any("ControlPath" in str(arg) for arg in final_command)
+            if not has_cm:
+                cm_options = [
+                    "-o",
+                    "ControlMaster=auto",
+                    "-o",
+                    f"ControlPath={cm_sock}",
+                    "-o",
+                    "ControlPersist=600s",
+                ]
+                final_command = [final_command[0]] + cm_options + final_command[1:]
+
         session = Session(
             session_id=session_id,
             name=session_name,
-            command=command,
+            command=final_command,
             rows=rows,
             cols=cols,
         )

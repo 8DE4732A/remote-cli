@@ -97,13 +97,17 @@ uv run remote-cli send s_7f8a9b2c "y"
 
 # Agent sends Ctrl+C to interrupt a long-running process
 uv run remote-cli send s_7f8a9b2c --ctrl-c
+
+# Agent transfers files or directories (like docker cp)
+uv run remote-cli cp ./app.tar.gz s_7f8a9b2c:/opt/
+uv run remote-cli cp s_7f8a9b2c:/var/log/nginx/error.log ./logs/
 ```
 
 ---
 
 ### 3. Human Observation & Intervention
 
-While the Agent is executing commands, the human user sees all command text and outputs scrolling in real time in their terminal window. If needed, the human can type commands directly into that same terminal window.
+While the Agent is executing commands or transferring files, the human user sees all command text and outputs scrolling in real time in their terminal window. If needed, the human can type commands directly into that same terminal window.
 
 ---
 
@@ -117,10 +121,14 @@ While the Agent is executing commands, the human user sees all command text and 
 | `remote-cli session attach <ID>` (or `attach`) | Attach terminal in raw mode to existing session |
 | `remote-cli session close <ID>` | Close and terminate a session |
 | `remote-cli exec <ID> "<COMMAND>"` | Execute command in session, capture output & exit code |
+| `remote-cli cp <SRC> <DEST>` | Transfer files/dirs between local & session (`./file s_xxx:/remote/`) |
+| `remote-cli upload <ID> <LOCAL> <REMOTE>` | Upload local file or directory to remote session |
+| `remote-cli download <ID> <REMOTE> <LOCAL>` | Download remote file or directory from session to local |
 | `remote-cli send <ID> [TEXT]` | Send raw keystrokes or control keys (`--ctrl-c`, `--ctrl-d`) |
 | `remote-cli snapshot <ID>` | Capture 2D terminal screen state (ANSI-rendered) |
 | `remote-cli logs <ID> [-n LINES]` | View recent output scrollback logs |
 | `remote-cli daemon start / stop / status` | Manage background daemon lifecycle |
+
 
 ---
 
@@ -141,13 +149,18 @@ While the Agent is executing commands, the human user sees all command text and 
    │  ┌────────────────────────────────────────────────────────┐ │
    │  │ Session (e.g. s_7f8a9b2c)                              │ │
    │  │  - Master/Slave PTY (`pty.openpty`)                    │ │
+   │  │  - SSH ControlMaster Socket (`~/.remote-cli/cm/*.sock`) │ │
    │  │  - Pyte Virtual Terminal Screen (`pyte.HistoryScreen`) │ │
    │  │  - Scrollback Ring Buffer                              │ │
    │  │  - Exec Sentinel Detection Engine                      │ │
+   │  │  - Dual Transfer Engine:                               │ │
+   │  │     * Fast Path: Native OpenSSH ControlMaster SCP      │ │
+   │  │     * Fallback: Universal In-Band Tar+Base64 Stream    │ │
    │  │  - Process: `ssh user@remote-server` (or local shell)  │ │
    │  └────────────────────────────────────────────────────────┘ │
    └─────────────────────────────────────────────────────────────┘
 ```
+
 
 ---
 

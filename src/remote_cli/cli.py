@@ -134,10 +134,21 @@ def session_list():
 
 
 @session_app.command("attach")
-def session_attach(session_id: str):
-    """Attach terminal to an existing session."""
+def session_attach(
+    session_id: str | None = typer.Argument(
+        None, help="Target session ID (defaults to latest active session)"
+    ),
+):
+    """Attach terminal to an existing session (like tmux attach)."""
     ensure_daemon_running()
     client = Client()
+    if not session_id:
+        active_sessions = [s for s in client.list_sessions() if s.status == "active"]
+        if not active_sessions:
+            err_console.print("[yellow]No active sessions to attach.[/yellow]")
+            raise typer.Exit(1)
+        session_id = active_sessions[-1].session_id
+
     session = client.get_session(session_id)
     if not session:
         err_console.print(f"[red]Error:[/red] Session {session_id} not found.")
@@ -170,7 +181,11 @@ def ls_shortcut():
 
 
 @app.command("attach")
-def attach_shortcut(session_id: str):
+def attach_shortcut(
+    session_id: str | None = typer.Argument(
+        None, help="Target session ID (defaults to latest active session)"
+    ),
+):
     """Shortcut for `session attach`."""
     session_attach(session_id)
 
@@ -263,6 +278,98 @@ def logs_command(
             print(line)
     except Exception as e:
         err_console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1) from None
+
+
+@app.command("cp")
+def cp_command(
+    src: str = typer.Argument(..., help="Source path (e.g. ./file or s_12345:/remote/path)"),
+    dest: str = typer.Argument(..., help="Destination path (e.g. s_12345:/remote/path or ./file)"),
+):
+    """Copy files or directories between local machine and remote session (like docker cp)."""
+    ensure_daemon_running()
+    client = Client()
+
+    is_download = ":" in src and not src.startswith("http://") and not src.startswith("https://")
+    is_upload = ":" in dest and not dest.startswith("http://") and not dest.startswith("https://")
+
+    if is_download and is_upload:
+        err_console.print(
+            "[red]Error:[/red] Direct session-to-session copy is not supported. Use a local staging path."
+        )
+        raise typer.Exit(1) from None
+
+    if not is_download and not is_upload:
+        err_console.print(
+            "[red]Error:[/red] One of SRC or DEST must include SESSION_ID (e.g. `remote-cli cp ./app.tar.gz s_12345:/opt/`)"
+        )
+        raise typer.Exit(1) from None
+
+    try:
+        if is_download:
+            session_id, remote_path = src.split(":", 1)
+            with console.status(
+                f"[cyan]Downloading [bold]{remote_path}[/bold] from session {session_id}...[/cyan]"
+            ):
+                client.download_file(session_id, remote_path, dest)
+            console.print(
+                f"[green]✓ Successfully downloaded [bold]{remote_path}[/bold] -> [bold]{dest}[/bold][/green]"
+            )
+        else:
+            session_id, remote_path = dest.split(":", 1)
+            with console.status(
+                f"[cyan]Uploading [bold]{src}[/bold] to session {session_id}:{remote_path}...[/cyan]"
+            ):
+                client.upload_file(session_id, src, remote_path)
+            console.print(
+                f"[green]✓ Successfully uploaded [bold]{src}[/bold] -> [bold]{session_id}:{remote_path}[/bold][/green]"
+            )
+    except Exception as e:
+        err_console.print(f"[red]Copy error:[/red] {e}")
+        raise typer.Exit(1) from None
+
+
+@app.command("upload")
+def upload_command(
+    session_id: str = typer.Argument(..., help="Target session ID"),
+    local_path: str = typer.Argument(..., help="Local file or directory path"),
+    remote_path: str = typer.Argument(..., help="Remote destination path on server"),
+):
+    """Upload a local file or directory to remote session."""
+    ensure_daemon_running()
+    client = Client()
+    try:
+        with console.status(
+            f"[cyan]Uploading [bold]{local_path}[/bold] to {session_id}:{remote_path}...[/cyan]"
+        ):
+            client.upload_file(session_id, local_path, remote_path)
+        console.print(
+            f"[green]✓ Successfully uploaded [bold]{local_path}[/bold] -> [bold]{session_id}:{remote_path}[/bold][/green]"
+        )
+    except Exception as e:
+        err_console.print(f"[red]Upload error:[/red] {e}")
+        raise typer.Exit(1) from None
+
+
+@app.command("download")
+def download_command(
+    session_id: str = typer.Argument(..., help="Target session ID"),
+    remote_path: str = typer.Argument(..., help="Remote file or directory path on server"),
+    local_path: str = typer.Argument(..., help="Local destination path"),
+):
+    """Download a remote file or directory from session to local machine."""
+    ensure_daemon_running()
+    client = Client()
+    try:
+        with console.status(
+            f"[cyan]Downloading [bold]{remote_path}[/bold] from {session_id} to {local_path}...[/cyan]"
+        ):
+            client.download_file(session_id, remote_path, local_path)
+        console.print(
+            f"[green]✓ Successfully downloaded [bold]{remote_path}[/bold] -> [bold]{local_path}[/bold][/green]"
+        )
+    except Exception as e:
+        err_console.print(f"[red]Download error:[/red] {e}")
         raise typer.Exit(1) from None
 
 
